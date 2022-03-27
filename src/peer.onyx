@@ -1,0 +1,29 @@
+package onyx_net
+
+Peer_State :: enum {
+    Disconnected;
+    Connecting;
+    Acknowledging_Connection;
+    Connection_Pending;
+    Connection_Successed;
+    Connection;
+    Disconnect_Later;
+    Disconnecting;
+    Acknowledging_Disconnect;
+    Zombie;
+}
+
+Peer :: struct {
+    host: ^Host;
+    addr: net.Socket_Address;
+    state: Peer_State;
+
+    channels: [] Channel;
+}
+
+
+
+Channel :: struct {
+    seq_number: u16;
+    
+}

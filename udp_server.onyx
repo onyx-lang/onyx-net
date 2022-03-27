@@ -1,0 +1,26 @@
+#load "core/std"
+
+use package core
+
+main :: (args) => {
+
+    udp_socket, err := net.socket_create(.Inet, .Dgram);
+    assert(err == .None, "Failed to create socket");
+
+    assert(udp_socket->bind(8080), "Failed to bind socket");
+
+    while true {
+        recv_buffer: [1024] u8;
+        recv_addr, recv_bytes := udp_socket->recvfrom(recv_buffer);
+
+        tmp := recv_addr->addr_as_str();
+        printf("{} sent {} bytes\n", tmp, recv_bytes);
+        string.free(tmp);
+
+        printf("{}\n", recv_buffer[0 .. recv_bytes]);
+
+        send_buffer: [1024] u8;
+        to_send := conv.format(send_buffer, "Recieved: '{}'", recv_buffer[0 .. recv_bytes]);
+        udp_socket->sendto(to_send, ^recv_addr);
+    }
+}

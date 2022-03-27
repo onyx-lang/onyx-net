@@ -1,0 +1,43 @@
+#load "core/std"
+
+use package core
+
+octets_to_addr :: (a, b, c, d: u8) -> u32 {
+    return (cast(u32) a << 24) |
+           (cast(u32) b << 16) |
+           (cast(u32) c << 8)  |
+           (cast(u32) d << 0);
+}
+
+main :: (args) => {
+    udp_socket, err := net.socket_create(.Inet, .Dgram);
+    assert(err == .None, "Failed to create socket");
+    defer udp_socket->close();
+
+    dest_addr: net.Socket_Address;
+    dest_addr.port = 8080;
+    // dest_addr.addr = octets_to_addr(45, 76, 30, 19);
+    dest_addr.addr = octets_to_addr(127, 0, 0, 1);
+
+
+    random.set_seed(12341);
+    for 1000 {
+        to_send := random.string(50, alpha_numeric=true);
+
+        sent_bytes := udp_socket->sendto(to_send, ^dest_addr);
+        printf("Sent {} bytes!\n", sent_bytes);
+
+        string.free(to_send);
+    }
+
+    for 1000 {
+        recv_buffer: [1024] u8;
+        recv_addr, recv_bytes := udp_socket->recvfrom(recv_buffer);
+
+        tmp := recv_addr->addr_as_str();
+        printf("{} sent {} bytes\n", tmp, recv_bytes);
+        string.free(tmp);
+
+        printf("{}\n", recv_buffer[0 .. recv_bytes]);
+    }
+}

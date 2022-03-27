@@ -1,0 +1,11 @@
+package onyx_net
+
+Host :: struct {
+    socket : net.Socket;
+    addr   : net.Socket_Address;
+
+    peers  : [] Peer;
+    maximum_peers: u32;
+}
+
+

@@ -1,0 +1,10 @@
+package onyx_net
+
+#package {
+    array :: package core.array
+    net   :: package core.net
+    list  :: package core.list
+    alloc :: package core.alloc
+}
+
+#load_all "./."
