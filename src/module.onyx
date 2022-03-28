@@ -1,10 +1,14 @@
 package onyx_net
 
 #package {
-    array :: package core.array
-    net   :: package core.net
-    list  :: package core.list
-    alloc :: package core.alloc
+    array  :: package core.array
+    net    :: package core.net
+    list   :: package core.list
+    alloc  :: package core.alloc
+    memory :: package core.memory
+    string :: package core.string
+    random :: package core.random
+    os     :: package core.os
 }
 
 #load_all "./."

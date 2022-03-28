@@ -1,0 +1,74 @@
+package onyx_net
+
+Command :: enum (u8) {
+    None             :: 0;
+    Acknowledge      :: 1;
+    Connect          :: 2;
+    Verify_Connect   :: 3;
+    Disconnect       :: 4;
+    Ping             :: 5;
+    Send_Reliable    :: 6;
+    Send_Unreliable  :: 7;
+    Send_Unsequenced :: 8;
+
+    Flag_Acknowledge :: 1 << 6;
+    Flag_Unsequenced :: 1 << 7;
+}
+
+command_get_effective :: (n: Command) -> Command {
+    return ~~(n & 63);
+}
+
+Protocol_Header :: struct #pack {
+    peer_id: u16;
+    sent_time: u16;
+}
+
+Protocol_Command_Header :: struct #pack {
+    command: Command;
+    channel: Channel_ID;
+    seq_number: u16;
+}
+
+Protocol_Acknowledge :: struct #pack {
+    use header: Protocol_Command_Header;
+    recv_seq_number: u16;
+    recv_sent_time: u16;
+}
+
+Protocol_Connect :: struct #pack {
+    use header: Protocol_Command_Header;
+    outgoing_peer_id : u16;
+    mtu              : u32;
+    window_size      : u32;
+    channel_count    : u32;
+    connect_id       : u32;
+}
+
+Protocol_Verify_Connect :: struct #pack {
+    use header: Protocol_Command_Header;
+    outgoing_peer_id : u16;
+    mtu              : u32;
+    window_size      : u32;
+    channel_count    : u32;
+    connect_id       : u32;
+}
+
+Protocol_Send :: struct #pack {
+    use header: Protocol_Command_Header;
+    data_length: u16;
+}
+
+Protocol_Disconnect :: Protocol_Command_Header;
+
+command_sizes := u32.[
+    /* None             */ 0,
+    /* Acknowledge      */ sizeof Protocol_Acknowledge,
+    /* Connect          */ sizeof Protocol_Connect,
+    /* Verify_Connect   */ sizeof Protocol_Verify_Connect,
+    /* Disconnect       */ sizeof Protocol_Disconnect,
+    /* Ping             */ 0,
+    /* Send_Reliable    */ sizeof Protocol_Send,
+    /* Send_Unreliable  */ sizeof Protocol_Send,
+    /* Send_Unsequenced */ sizeof Protocol_Send,
+];

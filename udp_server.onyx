@@ -1,13 +1,44 @@
 #load "core/std"
+#load "src/module"
 
 use package core
+onyx_net :: package onyx_net
+
 
 main :: (args) => {
+    addr: net.Socket_Address;
+    addr.port = 8080;
+
+    server, err := onyx_net.host_create(^addr, 32);
+    if err != .None {
+        println(err);
+        return;
+    }
+
+    while true {
+        println("Getting events...");
+        for server->get_events(timeout = 2000) {
+            printf("{*}\n", it);
+
+            if it.type == .Connection {
+                packet := new(onyx_net.Packet);
+                packet.flags |= .Reliable;
+                packet.data = "Welcome!!!";
+
+                onyx_net.peer_send(it.peer, 0, packet);
+            }
+        }
+    }
+}
+
+old_main :: (args) => {
 
     udp_socket, err := net.socket_create(.Inet, .Dgram);
     assert(err == .None, "Failed to create socket");
 
     assert(udp_socket->bind(8080), "Failed to bind socket");
+
+    udp_socket->setting(.NonBlocking, 1);
 
     while true {
         recv_buffer: [1024] u8;

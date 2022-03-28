@@ -6,7 +6,7 @@ Peer_State :: enum {
     Acknowledging_Connection;
     Connection_Pending;
     Connection_Successed;
-    Connection;
+    Connected;
     Disconnect_Later;
     Disconnecting;
     Acknowledging_Disconnect;
@@ -19,11 +19,196 @@ Peer :: struct {
     state: Peer_State;
 
     channels: [] Channel;
+
+    incoming_id: u16;
+    outgoing_id: u16;
+    connect_id: u32;
+    mtu: u32;
+    window_size: u32;
+    last_send_time: u32;
+
+    outgoing_reliable_seq_number: u16;
+    incoming_reliable_seq_number: u16;
+    outgoing_unsequenced_group:   u32;
+
+    outgoing_commands: [..] ^Outgoing_Command;
+    incoming_commands: [..] ^Incoming_Command;
+    acknowledgements:  [..] Acknowledgement;
+    sent_reliable_commands: [..] ^Outgoing_Command;
+}
+
+peer_destroy :: (peer: ^Peer) {
+    memory.free_slice(^peer.channels);
+    array.free(^peer.outgoing_commands);
+    array.free(^peer.incoming_commands);
+}
+
+peer_disconnect :: (peer: ^Peer) {
+    if peer.state == .Disconnected do return;
+
+    peer.state = .Disconnected;
+
+    peer_destroy(peer);
+}
+
+peer_queue_outgoing_command :: #match {
+    (peer: ^Peer, command: ^Protocol_Command_Header, packet: ^Packet = null) -> ^Outgoing_Command {
+        out := new(Outgoing_Command);
+        out.command = command;
+        out.packet = packet;
+
+        peer_setup_outgoing_command(peer, out);
+        return out;
+    }
+}
+
+peer_setup_outgoing_command :: (peer: ^Peer, command: ^Outgoing_Command) {
+    if command.command.channel == 255 {
+        peer.outgoing_reliable_seq_number += 1;
+        command.reliable_seq_number = peer.outgoing_reliable_seq_number;
+        command.unreliable_seq_number = 0;
+
+    } else {
+        channel := ^peer.channels[command.command.channel];
+        
+        // Oof... That's a long chain of command.
+        if (command.command.command & .Flag_Acknowledge) != 0 {
+            channel.outgoing_reliable_seq_number += 1;
+            command.reliable_seq_number = channel.outgoing_reliable_seq_number;
+            command.unreliable_seq_number = 0;
+
+        } elseif (command.command.command & .Flag_Unsequenced) != 0 {
+            peer.outgoing_unsequenced_group += 1;
+            command.reliable_seq_number = 0;
+            command.unreliable_seq_number = 0;
+
+        } else {
+            channel.outgoing_unreliable_seq_number += 1;
+
+            command.reliable_seq_number = channel.outgoing_reliable_seq_number;
+            command.unreliable_seq_number = channel.outgoing_unreliable_seq_number;
+        }
+    }
+
+    command.send_attempts = 0;
+    command.sent_time = 0;
+    command.command.seq_number = net.host_to_network(command.reliable_seq_number);
+
+    peer.outgoing_commands << command;
+}
+
+peer_send :: (peer: ^Peer, channel_id: Channel_ID, packet: ^Packet) -> bool {
+    if peer.state != .Connected || ~~channel_id > peer.channels.count do return false;
+
+    channel := ^peer.channels[channel_id];
+
+    @TODO // Fragmented sending
+    if packet.data.count > peer.mtu - sizeof Protocol_Header - sizeof Protocol_Send do return false;
+
+    command := new(Protocol_Send);
+    command.channel = channel_id;
+    command.data_length = net.host_to_network(cast(u16) packet.data.count);
+
+    if packet.flags & .Reliable {
+        command.command = .Send_Reliable;
+        command.command |= .Flag_Acknowledge;
+    } elseif packet.flags & .Unsequenced {
+        command.command = .Send_Unsequenced;
+        command.command |= .Flag_Unsequenced;
+    } else {
+        command.command = .Send_Unreliable;
+    }
+
+    return peer_queue_outgoing_command(peer, command, packet) != null;
+}
+
+peer_queue_acknowledgement :: (peer: ^Peer, command: ^Protocol_Command_Header, sent_time: u16) {
+    peer.acknowledgements << .{ sent_time, command };
+}
+
+peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
+    peer.last_send_time = peer.host.current_time;
+
+    send_buffer: [65535] u8;
+
+    total_sent := 0;
+    for peer.outgoing_commands {
+        to_send, success := it->pack_into_buffer(peer, send_buffer);
+        if !success do continue;
+
+        sent_bytes := peer.host.socket->sendto(to_send, ^peer.addr);
+        if sent_bytes < 0 {
+            return -1;
+        }
+
+        total_sent += sent_bytes;
+        peer.sent_reliable_commands << it;
+    }
+
+    array.clear(^peer.outgoing_commands);
+    return total_sent;
+}
+
+peer_send_acknowledgements :: (peer: ^Peer) {
+    send_buffer: [65535] u8;
+
+    for ^ack: peer.acknowledgements {
+        command: Protocol_Acknowledge;
+        command.command = .Acknowledge;
+        command.channel = ack.command.channel;
+        command.seq_number = 0;
+        command.recv_seq_number = ack.command.seq_number;
+        command.recv_sent_time = ack.sent_time;
+
+        out: Outgoing_Command;
+        out.command = ^command;
+        
+        to_send, success := out->pack_into_buffer(peer, send_buffer);
+        if !success do continue;
+
+        sent_bytes := peer.host.socket->sendto(to_send, ^peer.addr);
+        if sent_bytes < 0 do return;
+    }
+
+    array.clear(^peer.acknowledgements);
+}
+
+peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channel_ID) -> Command {
+    command: ^Outgoing_Command;
+    index := 0;
+    for peer.sent_reliable_commands {
+        if it.reliable_seq_number == seq_num && it.command.channel == channel {
+            command = it;
+            break;
+        }
+
+        index += 1;
+    }
+
+    if command == null do return .None;
+
+    defer {
+        cfree(command.command);
+        cfree(command);
+        array.fast_delete(^peer.sent_reliable_commands, index);
+    }
+    return command_get_effective(command.command.command);
 }
 
 
+Channel_ID :: u8;
 
 Channel :: struct {
+    id: Channel_ID;
     seq_number: u16;
-    
+
+    reliable_windows: [] u16;
+    max_reliable_windows: u32;
+
+    outgoing_unreliable_seq_number: u16;
+    outgoing_reliable_seq_number: u16;
+    incoming_reliable_seq_number: u16;
+
 }
+
+

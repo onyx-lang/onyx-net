@@ -1,6 +1,8 @@
 #load "core/std"
+#load "src/module"
 
 use package core
+onyx_net :: package onyx_net
 
 octets_to_addr :: (a, b, c, d: u8) -> u32 {
     return (cast(u32) a << 24) |
@@ -10,6 +12,37 @@ octets_to_addr :: (a, b, c, d: u8) -> u32 {
 }
 
 main :: (args) => {
+    //
+    // 'null' signifies that this host should not bind a socket
+    // to a port. Only 1 peer is needed, as this is only connecting
+    // to one server.
+    host: ^onyx_net.Host;
+    if host', err := onyx_net.host_create(null, 1); err != .None {
+        println(err);
+    }
+
+    addr: net.Socket_Address;
+    addr.addr = octets_to_addr(127, 0, 0, 1);
+    addr.port = 8080;
+    peer := onyx_net.host_connect(host, ^addr, 2);
+
+    while true {
+        println("Waiting for events....");
+        for host->get_events(timeout=1000) {
+            printf("{*}\n", it);
+
+            if it.type == .Message {
+                packet := new(onyx_net.Packet);
+                packet.flags |= .Reliable;
+                packet.data = "HELLO";
+
+                onyx_net.peer_send(it.peer, 0, packet);
+            }
+        }
+    }
+}
+
+old_main :: (args) => {
     udp_socket, err := net.socket_create(.Inet, .Dgram);
     assert(err == .None, "Failed to create socket");
     defer udp_socket->close();
@@ -21,7 +54,7 @@ main :: (args) => {
 
 
     random.set_seed(12341);
-    for 1000 {
+    for 10 {
         to_send := random.string(50, alpha_numeric=true);
 
         sent_bytes := udp_socket->sendto(to_send, ^dest_addr);

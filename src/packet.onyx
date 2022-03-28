@@ -1,0 +1,67 @@
+package onyx_net
+
+Outgoing_Command :: struct {
+    command: ^Protocol_Command_Header;
+    packet : ^Packet;
+    reliable_seq_number   : u16;
+    unreliable_seq_number : u16;
+    sent_time             : u16;
+    send_attempts         : u16;
+
+    pack_into_buffer :: outgoing_command_pack_into_buffer;
+}
+
+Incoming_Command :: struct {
+    command: ^Protocol_Command_Header;
+    packet : ^Packet;
+    reliable_seq_number   : u16;
+    unreliable_seq_number : u16;
+}
+
+Packet :: struct {
+    Flags :: enum #flags {
+        Reliable;
+        Unsequenced;
+    }
+
+    flags: Flags;
+    data: [] u8;
+}
+
+Acknowledgement :: struct {
+    sent_time: u16;
+    command: ^Protocol_Command_Header;
+}
+
+
+outgoing_command_pack_into_buffer :: (out: ^Outgoing_Command, peer: ^Peer, buf: [] u8) -> ([] u8, bool) {
+    write_offset := 0;
+    write :: macro (data: [] u8) {
+        if write_offset + data.count > buf.count do return .[], false;
+        memory.copy(buf.data + write_offset, data.data, data.count);
+        write_offset += data.count;
+    }
+
+    peer_id := net.host_to_network(peer.outgoing_id);
+    sent_time := net.host_to_network(cast(u16)(peer.host.current_time & 0xFFFF));
+
+    //
+    // Connect packets expect to have a peer id of FFFF.
+    // However, the outgoing_id needs to remain its original value.
+    if command_get_effective(out.command.command) == .Connect {
+        peer_id = 65535;
+    }
+
+    @HACK @HACK
+    write((cast(^u8) ^peer_id)[0 .. 2]);
+    write((cast(^u8) ^sent_time)[0 .. 2]);
+
+    command_size := command_sizes[~~ command_get_effective(out.command.command)];
+    write((cast(^u8) out.command)[0 .. command_size]);
+
+    if out.packet != null {
+        write(out.packet.data);
+    }
+
+    return buf[0 .. write_offset], true;
+}

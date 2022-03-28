@@ -20,3 +20,9 @@ transferred in a different way, or chunked up by the application layer.
 
 
 
+Each packet is at most 1400 bytes in size.
+
+0        2                     4           6           8    ...
+| peerID | sentTime | checksum | channelID | commandID | data 
+           OPTIONAL   OPTIONAL
+
