@@ -98,12 +98,16 @@ peer_setup_outgoing_command :: (peer: ^Peer, command: ^Outgoing_Command) {
 }
 
 peer_send :: (peer: ^Peer, channel_id: Channel_ID, packet: ^Packet) -> bool {
-    if peer.state != .Connected || ~~channel_id > peer.channels.count do return false;
+    if peer.state != .Connected || ~~channel_id > peer.channels.count {
+        return false;
+    }
 
     channel := ^peer.channels[channel_id];
 
     @TODO // Fragmented sending
-    if packet.data.count > peer.mtu - sizeof Protocol_Header - sizeof Protocol_Send do return false;
+    if packet.data.count > peer.mtu - sizeof Protocol_Header - sizeof Protocol_Send {
+        return false;
+    }
 
     command := new(Protocol_Send);
     command.channel = channel_id;
@@ -142,7 +146,10 @@ peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
         }
 
         total_sent += sent_bytes;
-        peer.sent_reliable_commands << it;
+        
+        if (it.command.command & .Flag_Acknowledge) != 0 {
+            peer.sent_reliable_commands << it;
+        }
     }
 
     array.clear(^peer.outgoing_commands);
@@ -157,8 +164,8 @@ peer_send_acknowledgements :: (peer: ^Peer) {
         command.command = .Acknowledge;
         command.channel = ack.command.channel;
         command.seq_number = 0;
-        command.recv_seq_number = ack.command.seq_number;
-        command.recv_sent_time = ack.sent_time;
+        command.recv_seq_number = net.host_to_network(ack.command.seq_number);
+        command.recv_sent_time = net.host_to_network(ack.sent_time);
 
         out: Outgoing_Command;
         out.command = ^command;

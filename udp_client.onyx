@@ -27,9 +27,12 @@ main :: (args) => {
     peer := onyx_net.host_connect(host, ^addr, 2);
 
     while true {
-        println("Waiting for events....");
-        for host->get_events(timeout=1000) {
+        for host->get_events(timeout=500) {
             printf("{*}\n", it);
+
+            if it.type == .Connection {
+                println("Successfully connected to server!");
+            }
 
             if it.type == .Message {
                 packet := new(onyx_net.Packet);
@@ -39,38 +42,14 @@ main :: (args) => {
                 onyx_net.peer_send(it.peer, 0, packet);
             }
         }
-    }
-}
 
-old_main :: (args) => {
-    udp_socket, err := net.socket_create(.Inet, .Dgram);
-    assert(err == .None, "Failed to create socket");
-    defer udp_socket->close();
+        if random.between(0, 3) == 0 {
+            packet := new(onyx_net.Packet);
+            packet.flags |= .Reliable;
+            packet.data = "What's Up?";
+            println("Sending what's up...");
 
-    dest_addr: net.Socket_Address;
-    dest_addr.port = 8080;
-    // dest_addr.addr = octets_to_addr(45, 76, 30, 19);
-    dest_addr.addr = octets_to_addr(127, 0, 0, 1);
-
-
-    random.set_seed(12341);
-    for 10 {
-        to_send := random.string(50, alpha_numeric=true);
-
-        sent_bytes := udp_socket->sendto(to_send, ^dest_addr);
-        printf("Sent {} bytes!\n", sent_bytes);
-
-        string.free(to_send);
-    }
-
-    for 1000 {
-        recv_buffer: [1024] u8;
-        recv_addr, recv_bytes := udp_socket->recvfrom(recv_buffer);
-
-        tmp := recv_addr->addr_as_str();
-        printf("{} sent {} bytes\n", tmp, recv_bytes);
-        string.free(tmp);
-
-        printf("{}\n", recv_buffer[0 .. recv_bytes]);
+            onyx_net.peer_send(peer, 0, packet);
+        }
     }
 }

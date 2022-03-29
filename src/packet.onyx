@@ -42,19 +42,18 @@ outgoing_command_pack_into_buffer :: (out: ^Outgoing_Command, peer: ^Peer, buf: 
         write_offset += data.count;
     }
 
-    peer_id := net.host_to_network(peer.outgoing_id);
-    sent_time := net.host_to_network(cast(u16)(peer.host.current_time & 0xFFFF));
+    header: Protocol_Header;
+    header.peer_id = net.host_to_network(peer.outgoing_id);
+    header.sent_time = net.host_to_network(cast(u16)(peer.host.current_time & 0xFFFF));
 
     //
     // Connect packets expect to have a peer id of FFFF.
     // However, the outgoing_id needs to remain its original value.
     if command_get_effective(out.command.command) == .Connect {
-        peer_id = 65535;
+        header.peer_id = 65535;
     }
 
-    @HACK @HACK
-    write((cast(^u8) ^peer_id)[0 .. 2]);
-    write((cast(^u8) ^sent_time)[0 .. 2]);
+    write((cast(^u8) ^header)[0 .. sizeof typeof header]);
 
     command_size := command_sizes[~~ command_get_effective(out.command.command)];
     write((cast(^u8) out.command)[0 .. command_size]);

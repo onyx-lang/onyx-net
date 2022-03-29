@@ -128,7 +128,8 @@ host_broadcast :: (host: ^Host, channel: Channel_ID, packet: ^Packet) {
 }
 
 host_pulse :: (host: ^Host, timeout: u32 = 0) -> bool {
-    host.current_time = ~~ os.time();
+    host.produced_event = false;
+    host.current_time = ~~ (os.time() & cast(u64) 0xFFFFFFFF);
 
     sent_command     := host_send_commands(host);
     received_command := host_receive_commands(host, timeout);
@@ -202,7 +203,6 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
     string.advance(^current_data, sizeof typeof *header);
 
     return_block :: macro () {
-        printf("DISCARDING: {}\n", peer_id);
         return host.event.type != .None;
     }
 
@@ -211,7 +211,9 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
         
         command := cast(^Protocol_Command_Header) current_data.data;
         command_id := command_get_effective(command.command);
-        printf("Received command: {} {*p}\n", command_sizes[command_id], cast(Command) command_id, command);
+        command.seq_number = net.network_to_host(command.seq_number);
+
+        // printf("Received command: {} {} {*p}\n", command_sizes[command_id], cast(Command) command_id, command);
         string.advance(^current_data, command_sizes[command_id]);
 
         switch command_id {
@@ -278,7 +280,6 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 
     next :: (use ctx: ^Context) -> (^Event, bool) {
         if host_pulse(host, timeout) {
-            host.produced_event = false;
             return ^host.event, true;
         }
 
@@ -323,7 +324,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 
     recv_sent_time := cast(u32) net.network_to_host(command.recv_sent_time);
     recv_sent_time |= host.current_time & 0xFFFF0000;
-    if (recv_sent_time & 0x8000) > (host.current_time & 0x8000) {
+    if (recv_sent_time & 0x8000) == 0x8000 && (host.current_time & 0x8000) == 0 {
         recv_sent_time -= 0x10000;
     }
 
@@ -335,7 +336,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 
     recv_seq_number := net.network_to_host(command.recv_seq_number);
     removed_command_id := peer_remove_sent_reliable_command(peer, recv_seq_number, command.channel);
-    printf("Received acknowledgement for {}.\n", removed_command_id);
+    // printf("Received acknowledgement for {}.\n", removed_command_id);
 
     switch peer.state {
         case .Acknowledging_Connection {
@@ -368,7 +369,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
             break;
 
         } elseif it.state == .Connecting && it.addr.addr == host.received_addr.addr {
-            if it.addr.port == host.received_addr.port && it.connect_id == command.connect_id do return null;
+            if it.addr.port == host.received_addr.port && it.connect_id == net.network_to_host(command.connect_id) do return null;
         }
     }
 
