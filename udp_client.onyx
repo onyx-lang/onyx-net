@@ -34,6 +34,11 @@ main :: (args) => {
                 println("Successfully connected to server!");
             }
 
+            if it.type == .Disconnection {
+                println("Lost connection to server.");
+                break break;
+            }
+
             if it.type == .Message {
                 packet := new(onyx_net.Packet);
                 packet.flags |= .Reliable;

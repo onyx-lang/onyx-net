@@ -20,12 +20,28 @@ Peer :: struct {
 
     channels: [] Channel;
 
+    // The other side should use this id to reference this peer.
     incoming_id: u16;
+
+    // This should be used in an outgoing messages to the other
+    // side. This is set up in the initial handshakes.
     outgoing_id: u16;
+
+    // Magic random number to verify a "Verify_Connect" packet.
     connect_id: u32;
+
+    // Maximum-Transmission-Unit
     mtu: u32;
+    
+    // Unused
     window_size: u32;
+
+    // Unix time of last sent message; not necessary last successfully
+    // delivered message.
     last_send_time: u32;
+    
+    // Unix time of last message that was acknowledge to be received.
+    last_acknowledge_time: u32;
 
     outgoing_reliable_seq_number: u16;
     incoming_reliable_seq_number: u16;
@@ -38,9 +54,9 @@ Peer :: struct {
 }
 
 peer_destroy :: (peer: ^Peer) {
-    memory.free_slice(^peer.channels);
-    array.free(^peer.outgoing_commands);
-    array.free(^peer.incoming_commands);
+    if peer.channels.data != null          do memory.free_slice(^peer.channels);
+    if peer.outgoing_commands.data != null do array.free(^peer.outgoing_commands);
+    if peer.incoming_commands.data != null do array.free(^peer.incoming_commands);
 }
 
 peer_disconnect :: (peer: ^Peer) {
@@ -131,12 +147,13 @@ peer_queue_acknowledgement :: (peer: ^Peer, command: ^Protocol_Command_Header, s
 }
 
 peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
-    peer.last_send_time = peer.host.current_time;
-
     send_buffer: [65535] u8;
 
     total_sent := 0;
     for peer.outgoing_commands {
+        it.sent_time = peer.host.current_time;
+        it.send_attempts += 1;
+
         to_send, success := it->pack_into_buffer(peer, send_buffer);
         if !success do continue;
 
@@ -146,6 +163,7 @@ peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
         }
 
         total_sent += sent_bytes;
+        peer.last_send_time = peer.host.current_time;
         
         if (it.command.command & .Flag_Acknowledge) != 0 {
             peer.sent_reliable_commands << it;
@@ -160,11 +178,13 @@ peer_send_acknowledgements :: (peer: ^Peer) {
     send_buffer: [65535] u8;
 
     for ^ack: peer.acknowledgements {
+        seq_num := net.host_to_network(ack.command.seq_number);
+
         command: Protocol_Acknowledge;
         command.command = .Acknowledge;
         command.channel = ack.command.channel;
-        command.seq_number = 0;
-        command.recv_seq_number = net.host_to_network(ack.command.seq_number);
+        command.seq_number = seq_num;
+        command.recv_seq_number = seq_num;
         command.recv_sent_time = net.host_to_network(ack.sent_time);
 
         out: Outgoing_Command;
@@ -178,6 +198,21 @@ peer_send_acknowledgements :: (peer: ^Peer) {
     }
 
     array.clear(^peer.acknowledgements);
+}
+
+peer_send_ping :: (peer: ^Peer) {
+    ping := new(Protocol_Ping);
+    ping.command = .Ping;
+    ping.command |= .Flag_Acknowledge;
+    ping.channel = 255;
+    peer_queue_outgoing_command(peer, ping);
+}
+
+peer_send_disconnect :: (peer: ^Peer) {
+    disconnect := new(Protocol_Disconnect);
+    disconnect.command = .Disconnect;
+    disconnect.channel = 255;
+    peer_queue_outgoing_command(peer, disconnect);
 }
 
 peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channel_ID) -> Command {

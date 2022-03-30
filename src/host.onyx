@@ -9,6 +9,8 @@ Host :: struct {
 
     peers  : [] Peer;
     connected_peers: u32;
+    ping_interval: u32;
+    no_ack_disconnect_timeout: u32;
 
     mtu: u32;
     current_time: u32;
@@ -61,6 +63,8 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
 
     host.addr = *addr;
     host.mtu = Host_Default_MTU;
+    host.ping_interval = 3000;
+    host.no_ack_disconnect_timeout = 10000;
 
     for^ peer: host.peers {
         peer.host = host;
@@ -154,8 +158,25 @@ host_send_commands :: (host: ^Host) -> bool {
             peer_send_acknowledgements(peer);
         }
 
-        // TODO
-        // Peer pinging
+        time_diff := math.abs(cast(i64) peer.last_acknowledge_time - cast(i64) host.current_time);
+
+        if peer.state == .Connected {
+            // Peer pinging
+            if time_diff >= ~~host.ping_interval {
+                peer_send_ping(peer);
+            }
+
+            // Detect a disconnected peer
+            if time_diff >= ~~host.no_ack_disconnect_timeout {
+                peer_send_disconnect(peer);
+                peer_flush_outgoing_commands(peer);
+                peer_disconnect(peer);
+
+                host_notify_disconnect(host, peer);
+                continue;
+            }
+        }
+
         // Packet loss calcuations
         // Dropped packet detection
 
@@ -206,7 +227,7 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
         return host.event.type != .None;
     }
 
-    while current_data.count > sizeof Protocol_Command_Header {
+    while current_data.count >= sizeof Protocol_Command_Header {
         if host.produced_event do break;
         
         command := cast(^Protocol_Command_Header) current_data.data;
@@ -237,6 +258,7 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
             }
 
             case .Ping {
+                // This just requires an acknowledgement
             }
 
             case .Send_Reliable {
@@ -268,7 +290,7 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
         }
     }
 
-    host.event.peer = peer;
+    // host.event.peer = peer;
     return host.produced_event;
 }
 
@@ -322,6 +344,26 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 #local host_handle_acknowledge_command :: (host: ^Host, peer: ^Peer, command: ^Protocol_Acknowledge) {
     if peer.state == .Disconnected || peer.state == .Zombie do return;
 
+    //
+    // This code was taken straight out of ENet's implementation, and it took me
+    // a while to understand what was going on here, so let me try to write it
+    // down for future me.
+    //
+    // As an optimization, the entire Unix time is not sent over the network, only
+    // the lower 16-bits are. This means that in order to compare times, the original
+    // time must be reconstructed. This is possible given a certain restriction:
+    // The response occurs within ~30 seconds of the timestamp. Since this is only
+    // reconstructed on the original machine, a difference of system clocks does
+    // not matter.
+    //
+    // The reason 30 seconds pops up is as follows: 16 bits represents 2^16 milliseconds.
+    // Given 2^10 milliseconds is about 1000 milliseconds, there are 2^6=64 seconds
+    // representable. What the code below does is stitch back together the upper 16-bits
+    // using the current time on the system, but also checks for a roll over case where
+    // the upper bits rolled over while the message was being processed. If this is the
+    // case the received time goes back 2^16 milliseconds. I believe this means that
+    // the response must occur within 30 seconds of the original message sent time,
+    // but I would have to think about it more to prove that.
     recv_sent_time := cast(u32) net.network_to_host(command.recv_sent_time);
     recv_sent_time |= host.current_time & 0xFFFF0000;
     if (recv_sent_time & 0x8000) == 0x8000 && (host.current_time & 0x8000) == 0 {
@@ -333,6 +375,8 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     if host.current_time < recv_sent_time {
         return;
     }
+
+    peer.last_acknowledge_time = recv_sent_time;
 
     recv_seq_number := net.network_to_host(command.recv_seq_number);
     removed_command_id := peer_remove_sent_reliable_command(peer, recv_seq_number, command.channel);
@@ -384,6 +428,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     peer.addr = host.received_addr;
     peer.outgoing_id = net.network_to_host(command.outgoing_peer_id);
     peer.mtu = net.network_to_host(command.mtu);
+    peer.last_acknowledge_time = host.current_time;
 
     verify := new(Protocol_Verify_Connect);
     verify.command = .Verify_Connect;
@@ -424,8 +469,17 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 //
 // This is slightly misnamed, as it is actually handling a received reliable message.
 #local host_handle_send_reliable_command :: (host: ^Host, peer: ^Peer, command: ^Protocol_Send, data: ^[] u8) {
+    if ~~command.channel > peer.channels.count || (peer.state != .Connected && peer.state != .Disconnect_Later) {
+        return;
+    }
+
+    data_length := cast(u32) net.network_to_host(command.data_length);
+    if data_length > data.count {
+        return;
+    }
+
     host_notify_message(host, peer, command.channel, *data);
-    string.advance(data, ~~ command.data_length);
+    string.advance(data, data_length);
 }
 
 

@@ -17,14 +17,19 @@ main :: (args) => {
 
     while true {
         for server->get_events(timeout = 2000) {
-            printf("{*}\n", it);
+            // printf("{*}\n", it);
 
             if it.type == .Connection {
+                printf("New connection from: {}\n", it.peer.addr);
                 packet := new(onyx_net.Packet);
                 packet.flags |= .Reliable;
                 packet.data = "Welcome!!!";
 
                 onyx_net.host_broadcast(server, 0, packet);
+            }
+
+            if it.type == .Disconnection {
+                printf("Disconnection: {}   {}\n", it.peer.addr, it.peer);
             }
 
             if it.type == .Message {

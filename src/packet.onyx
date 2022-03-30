@@ -5,8 +5,8 @@ Outgoing_Command :: struct {
     packet : ^Packet;
     reliable_seq_number   : u16;
     unreliable_seq_number : u16;
-    sent_time             : u16;
-    send_attempts         : u16;
+    sent_time             : u32;
+    send_attempts         : u32;
 
     pack_into_buffer :: outgoing_command_pack_into_buffer;
 }

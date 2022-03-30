@@ -60,6 +60,7 @@ Protocol_Send :: struct #pack {
 }
 
 Protocol_Disconnect :: Protocol_Command_Header;
+Protocol_Ping       :: Protocol_Command_Header;
 
 command_sizes := u32.[
     /* None             */ 0,
@@ -67,7 +68,7 @@ command_sizes := u32.[
     /* Connect          */ sizeof Protocol_Connect,
     /* Verify_Connect   */ sizeof Protocol_Verify_Connect,
     /* Disconnect       */ sizeof Protocol_Disconnect,
-    /* Ping             */ 0,
+    /* Ping             */ sizeof Protocol_Ping,
     /* Send_Reliable    */ sizeof Protocol_Send,
     /* Send_Unreliable  */ sizeof Protocol_Send,
     /* Send_Unsequenced */ sizeof Protocol_Send,
