@@ -26,8 +26,40 @@ main :: (args) => {
     addr.port = 8080;
     peer := onyx_net.host_connect(host, ^addr, 2);
 
+    input_thread: thread.Thread;
+    td_type :: struct { peer: ^onyx_net.Peer; } 
+    td := td_type.{ peer };
+
+    thread.spawn(^input_thread, ^td, (data) => {
+        peer := data.peer;
+        input_reader := io.reader_make(^stdin);
+
+        while true {
+            line := io.read_line(^input_reader) |> string.strip_whitespace();
+            
+            switch line {
+                case "disconnect" {
+                    println("Disconnecting");
+                    onyx_net.peer_send_disconnect(peer);
+                    onyx_net.peer_flush_outgoing_commands(peer);
+                    onyx_net.peer_disconnect(peer);
+                    break;
+                }
+
+                case "send" {
+                    packet := new(onyx_net.Packet);
+                    packet.flags |= .Reliable;
+                    packet.data = "What's Up?";
+                    println("Sending what's up...");
+
+                    onyx_net.peer_send(peer, 0, packet);
+                }
+            }
+        }
+    });
+
     while true {
-        for host->get_events(timeout=500) {
+        for host->get_events(timeout=100) {
             printf("{*}\n", it);
 
             if it.type == .Connection {
@@ -48,13 +80,21 @@ main :: (args) => {
             }
         }
 
-        if random.between(0, 3) == 0 {
-            packet := new(onyx_net.Packet);
-            packet.flags |= .Reliable;
-            packet.data = "What's Up?";
-            println("Sending what's up...");
+        // if random.between(0, 3) == 0 {
+        //     packet := new(onyx_net.Packet);
+        //     packet.flags |= .Reliable;
+        //     packet.data = "What's Up?";
+        //     println("Sending what's up...");
 
-            onyx_net.peer_send(peer, 0, packet);
-        }
+        //     onyx_net.peer_send(peer, 0, packet);
+        // }
+
+        // if random.between(0, 100) == 4 {
+        //     println("Disconnecting");
+        //     onyx_net.peer_send_disconnect(peer);
+        //     onyx_net.peer_flush_outgoing_commands(peer);
+        //     onyx_net.peer_disconnect(peer);
+        //     break;
+        // }
     }
 }

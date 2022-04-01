@@ -29,7 +29,7 @@ main :: (args) => {
             }
 
             if it.type == .Disconnection {
-                printf("Disconnection: {}   {}\n", it.peer.addr, it.peer);
+                printf("Disconnection: {}\n", it.peer.addr);
             }
 
             if it.type == .Message {

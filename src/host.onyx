@@ -65,6 +65,7 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
     host.mtu = Host_Default_MTU;
     host.ping_interval = 3000;
     host.no_ack_disconnect_timeout = 10000;
+    host.current_time = ~~ (os.time() & cast(u64) 0xFFFFFFFF);
 
     for^ peer: host.peers {
         peer.host = host;
@@ -73,6 +74,7 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
         peer.incoming_id = ~~((cast(u32) peer - cast(u32) host.peers.data) / sizeof Peer);
         peer.outgoing_id = ~~((cast(u32) peer - cast(u32) host.peers.data) / sizeof Peer);
         peer.mtu = host.mtu;
+        peer.no_ack_resend_timeout = 50;
     }
 
     return host, .None;
@@ -95,13 +97,9 @@ host_connect :: (host: ^Host, addr: ^net.Socket_Address, channel_count: u32) -> 
     peer.addr = *addr;
     peer.connect_id = random.int();
     peer.mtu = Host_Default_MTU;
+    peer.last_acknowledge_time = host.current_time;
 
-    for^ channel: peer.channels {
-        channel.id = ~~((cast(u32) channel - cast(u32) peer.channels.data) / 4);
-        channel.seq_number = 0;
-        channel.max_reliable_windows = 16;
-        memory.alloc_slice(^channel.reliable_windows, channel.max_reliable_windows);
-    }
+    for^ peer.channels do peer_setup_channel(peer, it);
     
     command := new(Protocol_Connect);
     command.command = .Connect;
@@ -135,8 +133,8 @@ host_pulse :: (host: ^Host, timeout: u32 = 0) -> bool {
     host.produced_event = false;
     host.current_time = ~~ (os.time() & cast(u64) 0xFFFFFFFF);
 
-    sent_command     := host_send_commands(host);
-    received_command := host_receive_commands(host, timeout);
+    host_send_commands(host);
+    host_receive_commands(host, timeout);
 
     return host.produced_event;
 }
@@ -160,26 +158,28 @@ host_send_commands :: (host: ^Host) -> bool {
 
         time_diff := math.abs(cast(i64) peer.last_acknowledge_time - cast(i64) host.current_time);
 
-        if peer.state == .Connected {
-            // Peer pinging
-            if time_diff >= ~~host.ping_interval {
-                peer_send_ping(peer);
-            }
+        // Peer pinging
+        if time_diff >= ~~host.ping_interval {
+            peer_send_ping(peer);
+        }
 
-            // Detect a disconnected peer
-            if time_diff >= ~~host.no_ack_disconnect_timeout {
-                peer_send_disconnect(peer);
-                peer_flush_outgoing_commands(peer);
-                peer_disconnect(peer);
+        // Detect a disconnected peer
+        if time_diff >= ~~host.no_ack_disconnect_timeout {
+            peer_send_disconnect(peer);
+            peer_flush_outgoing_commands(peer);
+            peer_disconnect(peer);
 
-                host_notify_disconnect(host, peer);
-                continue;
-            }
+            host_notify_disconnect(host, peer);
+            continue;
         }
 
         // Packet loss calcuations
-        // Dropped packet detection
 
+
+        // Dropped packet detection
+        peer_check_outgoing_commands(peer);
+
+        // Sending commands
         peer_flush_outgoing_commands(peer);
     }
 }
@@ -255,18 +255,17 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
             }
 
             case .Disconnect {
+                if peer == null do return_block();
+                host_handle_disconnect_command(host, peer, ~~ command);
             }
 
             case .Ping {
                 // This just requires an acknowledgement
             }
 
-            case .Send_Reliable {
+            case .Send_Reliable, .Send_Unreliable {
                 if peer == null do return_block();
                 host_handle_send_reliable_command(host, peer, ~~ command, ^current_data);
-            }
-
-            case .Send_Unreliable {
             }
 
             case .Send_Unsequenced {
@@ -421,7 +420,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
 
     channel_count := net.network_to_host(command.channel_count);
     memory.alloc_slice(^peer.channels, channel_count);
-    memory.set(peer.channels.data, 0, channel_count * sizeof Channel);
+    for ^peer.channels do peer_setup_channel(peer, it);
 
     peer.state = .Acknowledging_Connection;
     peer.connect_id = net.network_to_host(command.connect_id);
@@ -466,6 +465,11 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     return;
 }
 
+#local host_handle_disconnect_command :: (host: ^Host, peer: ^Peer, command: ^Protocol_Disconnect) {
+    peer.state = .Disconnected;
+    host_notify_disconnect(host, peer);
+}
+
 //
 // This is slightly misnamed, as it is actually handling a received reliable message.
 #local host_handle_send_reliable_command :: (host: ^Host, peer: ^Peer, command: ^Protocol_Send, data: ^[] u8) {
@@ -477,9 +481,20 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     if data_length > data.count {
         return;
     }
+    defer string.advance(data, data_length);
+
+    if command_get_effective(command.command) == .Send_Reliable {
+        channel := ^peer.channels[command.channel];
+        for channel.reliable_windows {
+            if command.seq_number == it do return;
+        }
+
+        channel.reliable_windows[channel.reliable_windows_cursor] = command.seq_number;
+        channel.reliable_windows_cursor += 1;
+        channel.reliable_windows_cursor %= channel.reliable_windows.count;
+    }
 
     host_notify_message(host, peer, command.channel, *data);
-    string.advance(data, data_length);
 }
 
 

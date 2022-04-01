@@ -9,6 +9,8 @@ package onyx_net
     string :: package core.string
     random :: package core.random
     os     :: package core.os
+    math   :: package core.math
+    iter   :: package core.iter
 }
 
 #load_all "./."

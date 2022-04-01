@@ -43,6 +43,8 @@ Peer :: struct {
     // Unix time of last message that was acknowledge to be received.
     last_acknowledge_time: u32;
 
+    no_ack_resend_timeout: u32;
+
     outgoing_reliable_seq_number: u16;
     incoming_reliable_seq_number: u16;
     outgoing_unsequenced_group:   u32;
@@ -65,6 +67,14 @@ peer_disconnect :: (peer: ^Peer) {
     peer.state = .Disconnected;
 
     peer_destroy(peer);
+}
+
+peer_setup_channel :: (peer: ^Peer, channel: ^Channel) {
+    channel.id = ~~((cast(u32) channel - cast(u32) peer.channels.data) / 4);
+    channel.seq_number = 0;
+    channel.reliable_windows_cursor = 0;
+    memory.alloc_slice(^channel.reliable_windows, 32);
+    for ^channel.reliable_windows do *it = 65535;
 }
 
 peer_queue_outgoing_command :: #match {
@@ -146,6 +156,16 @@ peer_queue_acknowledgement :: (peer: ^Peer, command: ^Protocol_Command_Header, s
     peer.acknowledgements << .{ sent_time, command };
 }
 
+peer_check_outgoing_commands :: (peer: ^Peer) {
+    for iter.as_iterator(^peer.sent_reliable_commands) {
+        time_diff := math.abs(cast(i64) it.sent_time - cast(i64) peer.host.current_time);
+        if time_diff >= ~~ peer.no_ack_resend_timeout {
+            peer.outgoing_commands << it;
+            #remove;
+        }
+    }
+}
+
 peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
     send_buffer: [65535] u8;
 
@@ -217,14 +237,12 @@ peer_send_disconnect :: (peer: ^Peer) {
 
 peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channel_ID) -> Command {
     command: ^Outgoing_Command;
-    index := 0;
-    for peer.sent_reliable_commands {
+    for iter.as_iterator(^peer.sent_reliable_commands) {
         if it.reliable_seq_number == seq_num && it.command.channel == channel {
             command = it;
+            #remove;
             break;
         }
-
-        index += 1;
     }
 
     if command == null do return .None;
@@ -232,7 +250,6 @@ peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channe
     defer {
         cfree(command.command);
         cfree(command);
-        array.fast_delete(^peer.sent_reliable_commands, index);
     }
     return command_get_effective(command.command.command);
 }
@@ -245,12 +262,11 @@ Channel :: struct {
     seq_number: u16;
 
     reliable_windows: [] u16;
-    max_reliable_windows: u32;
+    reliable_windows_cursor: u32;
 
     outgoing_unreliable_seq_number: u16;
     outgoing_reliable_seq_number: u16;
     incoming_reliable_seq_number: u16;
-
 }
 
 
