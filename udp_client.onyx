@@ -60,7 +60,7 @@ main :: (args) => {
 
     while true {
         for host->get_events(timeout=100) {
-            printf("{*}\n", it);
+            // printf("{*}\n", it);
 
             if it.type == .Connection {
                 println("Successfully connected to server!");
@@ -72,12 +72,18 @@ main :: (args) => {
             }
 
             if it.type == .Message {
-                packet := new(onyx_net.Packet);
-                packet.flags |= .Reliable;
-                packet.data = "HELLO";
-
-                onyx_net.peer_send(it.peer, 0, packet);
+                print("Server says: ");
+                print(it.data);
+                print("\n");
             }
+
+            // if it.type == .Message {
+            //     packet := new(onyx_net.Packet);
+            //     packet.flags |= .Reliable;
+            //     packet.data = "HELLO";
+
+            //     onyx_net.peer_send(it.peer, 0, packet);
+            // }
         }
 
         // if random.between(0, 3) == 0 {

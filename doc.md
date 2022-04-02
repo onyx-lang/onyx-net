@@ -26,3 +26,9 @@ Each packet is at most 1400 bytes in size.
 | peerID | sentTime | checksum | channelID | commandID | data 
            OPTIONAL   OPTIONAL
 
+
+Currently, these features are not supported:
+    [ ] Packets are not necessarily sequenced. A dropped packet followed
+        by a successful packet with be out of order.
+    
+    [x] Framemented reliable data.

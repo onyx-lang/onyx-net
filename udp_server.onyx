@@ -36,7 +36,7 @@ main :: (args) => {
                 if it.data == "What's Up?" {
                     packet := new(onyx_net.Packet);
                     packet.flags |= .Reliable;
-                    packet.data = "Not much";
+                    packet.data = #file_contents "src/host.onyx";
 
                     onyx_net.peer_send(it.peer, 0, packet);
                 }

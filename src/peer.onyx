@@ -71,8 +71,10 @@ peer_disconnect :: (peer: ^Peer) {
 
 peer_setup_channel :: (peer: ^Peer, channel: ^Channel) {
     channel.id = ~~((cast(u32) channel - cast(u32) peer.channels.data) / 4);
-    channel.seq_number = 0;
+    channel.outgoing_reliable_seq_number = 0;
     channel.reliable_windows_cursor = 0;
+    channel.next_fragment_id = 0;
+
     memory.alloc_slice(^channel.reliable_windows, 32);
     for ^channel.reliable_windows do *it = 65535;
 }
@@ -130,9 +132,39 @@ peer_send :: (peer: ^Peer, channel_id: Channel_ID, packet: ^Packet) -> bool {
 
     channel := ^peer.channels[channel_id];
 
-    @TODO // Fragmented sending
     if packet.data.count > peer.mtu - sizeof Protocol_Header - sizeof Protocol_Send {
-        return false;
+        data_per_packet := peer.mtu - sizeof Protocol_Header - sizeof Protocol_Send_Fragment;
+
+        number_of_segments := packet.data.count / data_per_packet;
+        if packet.data.count % data_per_packet != 0 do number_of_segments += 1;
+
+        fragment_id := channel.next_fragment_id;
+        channel.next_fragment_id += 1;
+
+        data_remaining := packet.data.count;
+        for number_of_segments {
+            fragment := new(Protocol_Send_Fragment);
+            fragment.command = .Send_Fragment;
+            if packet.flags & .Reliable {
+                fragment.command |= .Flag_Acknowledge;
+            }
+
+            fragment.channel = channel_id;
+            fragment.data_length = net.host_to_network(cast(u16) math.min(data_remaining, data_per_packet));
+            fragment.fragment_id = net.host_to_network(fragment_id);
+            fragment.fragment_count = net.host_to_network(number_of_segments);
+            fragment.fragment_number = net.host_to_network(it);
+            fragment.total_length = net.host_to_network(packet.data.count);
+            fragment.fragment_offset = net.host_to_network(packet.data.count - data_remaining);
+
+            if peer_queue_outgoing_command(peer, fragment, packet) == null {
+                return false;
+            }
+
+            data_remaining -= cast(u32) net.network_to_host(fragment.data_length);
+        }
+
+        return true;
     }
 
     command := new(Protocol_Send);
@@ -142,9 +174,6 @@ peer_send :: (peer: ^Peer, channel_id: Channel_ID, packet: ^Packet) -> bool {
     if packet.flags & .Reliable {
         command.command = .Send_Reliable;
         command.command |= .Flag_Acknowledge;
-    } elseif packet.flags & .Unsequenced {
-        command.command = .Send_Unsequenced;
-        command.command |= .Flag_Unsequenced;
     } else {
         command.command = .Send_Unreliable;
     }
@@ -259,14 +288,19 @@ Channel_ID :: u8;
 
 Channel :: struct {
     id: Channel_ID;
-    seq_number: u16;
 
     reliable_windows: [] u16;
     reliable_windows_cursor: u32;
 
     outgoing_unreliable_seq_number: u16;
     outgoing_reliable_seq_number: u16;
-    incoming_reliable_seq_number: u16;
+
+    next_fragment_id: u16;
+    pending_fragments: [..] Fragmented_Data;
 }
 
-
+Fragmented_Data :: struct {
+    fragment_id: u16;
+    data: [] u8;
+    fragments_remaining: u32;
+}

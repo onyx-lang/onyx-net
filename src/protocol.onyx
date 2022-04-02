@@ -9,7 +9,7 @@ Command :: enum (u8) {
     Ping             :: 5;
     Send_Reliable    :: 6;
     Send_Unreliable  :: 7;
-    Send_Unsequenced :: 8;
+    Send_Fragment    :: 8;
 
     Flag_Acknowledge :: 1 << 6;
     Flag_Unsequenced :: 1 << 7;
@@ -59,6 +59,16 @@ Protocol_Send :: struct #pack {
     data_length: u16;
 }
 
+Protocol_Send_Fragment :: struct #pack {
+    use header: Protocol_Command_Header;
+    data_length     : u16;
+    fragment_id     : u16;
+    fragment_count  : u32;
+    fragment_number : u32;
+    total_length    : u32;
+    fragment_offset : u32;
+}
+
 Protocol_Disconnect :: Protocol_Command_Header;
 Protocol_Ping       :: Protocol_Command_Header;
 
@@ -71,5 +81,5 @@ command_sizes := u32.[
     /* Ping             */ sizeof Protocol_Ping,
     /* Send_Reliable    */ sizeof Protocol_Send,
     /* Send_Unreliable  */ sizeof Protocol_Send,
-    /* Send_Unsequenced */ sizeof Protocol_Send,
+    /* Send_Fragment    */ sizeof Protocol_Send_Fragment,
 ];

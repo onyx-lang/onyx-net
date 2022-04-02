@@ -59,7 +59,17 @@ outgoing_command_pack_into_buffer :: (out: ^Outgoing_Command, peer: ^Peer, buf: 
     write((cast(^u8) out.command)[0 .. command_size]);
 
     if out.packet != null {
-        write(out.packet.data);
+        if command_get_effective(out.command.command) == .Send_Fragment {
+            //
+            // Converting to network byte order just to switch back here is a little silly...
+            fragment := cast(^Protocol_Send_Fragment) out.command;
+            start := cast(u32) net.network_to_host(fragment.fragment_offset);
+            end   := start + ~~net.network_to_host(fragment.data_length);
+
+            write(out.packet.data[start .. end]);
+        } else {
+            write(out.packet.data);
+        }
     }
 
     return buf[0 .. write_offset], true;

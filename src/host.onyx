@@ -58,7 +58,7 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
         }
     }
 
-    host.socket->setting(.NonBlocking, 1);    
+    host.socket->setting(.NonBlocking, 1);
     host.socket->setting(.Broadcast, 1);
 
     host.addr = *addr;
@@ -82,7 +82,7 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
 
 host_connect :: (host: ^Host, addr: ^net.Socket_Address, channel_count: u32) -> ^Peer {
     peer: ^Peer;
-    
+
     // Find first peer that is in the disconnected state.
     for^ host.peers do if it.state == .Disconnected {
         peer = it;
@@ -100,7 +100,7 @@ host_connect :: (host: ^Host, addr: ^net.Socket_Address, channel_count: u32) -> 
     peer.last_acknowledge_time = host.current_time;
 
     for^ peer.channels do peer_setup_channel(peer, it);
-    
+
     command := new(Protocol_Connect);
     command.command = .Connect;
     command.command |= .Flag_Acknowledge;
@@ -205,7 +205,7 @@ host_receive_commands :: (host: ^Host, timeout: u32 = 0) -> bool {
 host_handle_incoming_commands :: (host: ^Host) -> bool {
     header: ^Protocol_Header = ~~ host.received_data.data;
     current_data := host.received_data;
-    
+
     peer_id := cast(u32) net.network_to_host(header.peer_id);
     peer: ^Peer;
 
@@ -229,7 +229,7 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
 
     while current_data.count >= sizeof Protocol_Command_Header {
         if host.produced_event do break;
-        
+
         command := cast(^Protocol_Command_Header) current_data.data;
         command_id := command_get_effective(command.command);
         command.seq_number = net.network_to_host(command.seq_number);
@@ -268,7 +268,9 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
                 host_handle_send_reliable_command(host, peer, ~~ command, ^current_data);
             }
 
-            case .Send_Unsequenced {
+            case .Send_Fragment {
+                if peer == null do return_block();
+                host_handle_send_fragment_command(host, peer, ~~ command, ^current_data);
             }
         }
 
@@ -289,7 +291,6 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
         }
     }
 
-    // host.event.peer = peer;
     return host.produced_event;
 }
 
@@ -310,7 +311,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     ctx := new(Context);
     ctx.host = host;
     ctx.timeout = timeout;
-    return .{ ctx, next, null_proc };
+    return .{ ctx, next, cfree };
 }
 
 #local host_notify_connect :: (host: ^Host, peer: ^Peer) {
@@ -495,6 +496,58 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     }
 
     host_notify_message(host, peer, command.channel, *data);
+}
+
+#local host_handle_send_fragment_command :: (host: ^Host, peer: ^Peer, command: ^Protocol_Send_Fragment, data: ^[] u8) {
+    if ~~command.channel > peer.channels.count || (peer.state != .Connected && peer.state != .Disconnect_Later) {
+        return;
+    }
+
+    data_length := cast(u32) net.network_to_host(command.data_length);
+    if data_length > data.count {
+        return;
+    }
+    defer string.advance(data, data_length);
+
+    @CopyPaste
+    channel := ^peer.channels[command.channel];
+    for channel.reliable_windows {
+        if command.seq_number == it do return;
+    }
+
+    channel.reliable_windows[channel.reliable_windows_cursor] = command.seq_number;
+    channel.reliable_windows_cursor += 1;
+    channel.reliable_windows_cursor %= channel.reliable_windows.count;
+
+    fragment_id := net.network_to_host(command.fragment_id);
+    fragment: ^Fragmented_Data = null;
+    for^ channel.pending_fragments {
+        if it.fragment_id == fragment_id {
+            fragment = it;
+            break;
+        }
+    }
+
+    if fragment == null {
+        fragment = array.alloc_one(^channel.pending_fragments);
+        fragment.fragment_id = fragment_id;
+        fragment.fragments_remaining = net.network_to_host(command.fragment_count);
+        memory.alloc_slice(^fragment.data, net.network_to_host(command.total_length));
+    }
+
+    memory.copy(fragment.data.data + net.network_to_host(command.fragment_offset), data.data, data_length);
+    fragment.fragments_remaining -= 1;
+
+    if fragment.fragments_remaining == 0 {
+        host_notify_message(host, peer, command.channel, fragment.data);
+
+        for iter.as_iterator(^channel.pending_fragments, by_pointer=true) {
+            if it.fragment_id == fragment_id {
+                #remove;
+                break;
+            }
+        }
+    }
 }
 
 
