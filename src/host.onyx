@@ -218,7 +218,7 @@ host_handle_incoming_commands :: (host: ^Host) -> bool {
     }
 
     if peer != null {
-        peer.addr = host.received_addr;
+        if peer.addr.port != host.received_addr.port do return false;
     }
 
     string.advance(^current_data, sizeof typeof *header);

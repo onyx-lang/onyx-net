@@ -250,6 +250,14 @@ peer_send_acknowledgements :: (peer: ^Peer) {
 }
 
 peer_send_ping :: (peer: ^Peer) {
+    for peer.sent_reliable_commands {
+        if command_get_effective(it.command.command) == .Ping do return;
+    }
+
+    for peer.outgoing_commands {
+        if command_get_effective(it.command.command) == .Ping do return;
+    }
+
     ping := new(Protocol_Ping);
     ping.command = .Ping;
     ping.command |= .Flag_Acknowledge;
