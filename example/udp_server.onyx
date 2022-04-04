@@ -1,5 +1,5 @@
 #load "core/std"
-#load "src/module"
+#load "./../src/module"
 
 use package core
 onyx_net :: package onyx_net
@@ -36,7 +36,7 @@ main :: (args) => {
                 if it.data == "What's Up?" {
                     packet := new(onyx_net.Packet);
                     packet.flags |= .Reliable;
-                    packet.data = #file_contents "src/host.onyx";
+                    packet.data = #file_contents "./../src/host.onyx";
 
                     onyx_net.peer_send(it.peer, 0, packet);
                 }

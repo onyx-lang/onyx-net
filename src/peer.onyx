@@ -216,6 +216,8 @@ peer_flush_outgoing_commands :: (peer: ^Peer) -> i32 {
         
         if (it.command.command & .Flag_Acknowledge) != 0 {
             peer.sent_reliable_commands << it;
+        } else {
+            peer_free_outgoing_command(peer, it);
         }
     }
 
@@ -284,11 +286,18 @@ peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channe
 
     if command == null do return .None;
 
-    defer {
-        cfree(command.command);
-        cfree(command);
-    }
+    defer peer_free_outgoing_command(peer, command);
     return command_get_effective(command.command.command);
+}
+
+peer_free_outgoing_command :: (peer: ^Peer, command: ^Outgoing_Command) {
+    if command.packet.free_data {
+        raw_free(command.packet.data_allocator, command.packet.data.data);
+    }
+
+    if command.packet != null do cfree(command.packet);
+    cfree(command.command);
+    cfree(command);
 }
 
 

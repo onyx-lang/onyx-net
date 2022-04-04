@@ -1,5 +1,5 @@
 #load "core/std"
-#load "src/module"
+#load "./../src/module"
 
 use package core
 onyx_net :: package onyx_net

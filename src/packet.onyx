@@ -26,6 +26,14 @@ Packet :: struct {
 
     flags: Flags;
     data: [] u8;
+
+    // Set this to true to have the internal code
+    // free the data when it is done with the packet.
+    free_data := false;
+
+    // The allocator used for the data. Only used if
+    // free_data is set to true.
+    data_allocator := context.allocator;
 }
 
 Acknowledgement :: struct {
