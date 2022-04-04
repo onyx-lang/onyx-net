@@ -21,9 +21,9 @@ transferred in a different way, or chunked up by the application layer.
 
 
 Currently, these features are not supported:
-[ ] Bundle acknowledgement messages together.
+- [ ] Bundle acknowledgement messages together.
 
-[ ] Packets are not necessarily sequenced. A dropped packet followed
+- [ ] Packets are not necessarily sequenced. A dropped packet followed
     by a successful packet with be out of order.
 
-[x] Framemented reliable data.
+- [x] Framemented reliable data.
