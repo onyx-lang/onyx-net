@@ -15,8 +15,8 @@ Peer_State :: enum {
 
 Peer :: struct {
     host: ^Host;
-    addr: net.Socket_Address;
     state: Peer_State;
+    addr: net.Socket_Address;
 
     channels: [] Channel;
 

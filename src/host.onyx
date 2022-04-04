@@ -68,6 +68,7 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
     host.current_time = ~~ (os.time() & cast(u64) 0xFFFFFFFF);
 
     for^ peer: host.peers {
+        memory.set(peer, 0, sizeof typeof *peer);
         peer.host = host;
         peer.state = .Disconnected;
         peer.channels = .{ null, 0 };

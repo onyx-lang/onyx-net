@@ -9,6 +9,7 @@ each. On each socket, multiple channels are used. Each channel supports:
     - Sequencing
     - Reliable transmissions
     - Commands (control codes)
+
 These are supported independent of the other channels. This enable the
 programmer to use sequencial packets for data that needs to arrive in
 order, and unsequencial / unreliable packets for things like movement
@@ -19,16 +20,10 @@ practically, assume that anything over 1MB in size should probably be
 transferred in a different way, or chunked up by the application layer.
 
 
-
-Each packet is at most 1400 bytes in size.
-
-0        2                     4           6           8    ...
-| peerID | sentTime | checksum | channelID | commandID | data 
-           OPTIONAL   OPTIONAL
-
-
 Currently, these features are not supported:
-    [ ] Packets are not necessarily sequenced. A dropped packet followed
-        by a successful packet with be out of order.
-    
-    [x] Framemented reliable data.
+[ ] Bundle acknowledgement messages together.
+
+[ ] Packets are not necessarily sequenced. A dropped packet followed
+    by a successful packet with be out of order.
+
+[x] Framemented reliable data.
