@@ -84,6 +84,7 @@ peer_queue_outgoing_command :: #match {
         out := new(Outgoing_Command);
         out.command = command;
         out.packet = packet;
+        if packet != null do packet.reference_count += 1;
 
         peer_setup_outgoing_command(peer, out);
         return out;
@@ -291,11 +292,17 @@ peer_remove_sent_reliable_command :: (peer: ^Peer, seq_num: u16, channel: Channe
 }
 
 peer_free_outgoing_command :: (peer: ^Peer, command: ^Outgoing_Command) {
-    if command.packet.free_data {
-        raw_free(command.packet.data_allocator, command.packet.data.data);
-    }
+    if command.packet != null {
+        command.packet.reference_count -= 1;
+        if command.packet.reference_count <= 0 {
+            if command.packet.free_data {
+                raw_free(command.packet.data_allocator, command.packet.data.data);
+            }
 
-    if command.packet != null do cfree(command.packet);
+            cfree(command.packet);
+        }
+    }
+    
     cfree(command.command);
     cfree(command);
 }

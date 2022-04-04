@@ -34,6 +34,8 @@ Packet :: struct {
     // The allocator used for the data. Only used if
     // free_data is set to true.
     data_allocator := context.allocator;
+
+    reference_count := 0;
 }
 
 Acknowledgement :: struct {
