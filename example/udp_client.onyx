@@ -27,11 +27,7 @@ main :: (args) => {
     peer := onyx_net.host_connect(host, ^addr, 2);
 
     input_thread: thread.Thread;
-    td_type :: struct { peer: ^onyx_net.Peer; } 
-    td := td_type.{ peer };
-
-    thread.spawn(^input_thread, ^td, (data) => {
-        peer := data.peer;
+    thread.spawn(^input_thread, peer, (peer) => {
         input_reader := io.reader_make(^stdin);
 
         while true {

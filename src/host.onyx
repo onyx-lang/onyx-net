@@ -38,8 +38,8 @@ host_create :: (addr: ^net.Socket_Address, peer_count: u32) -> (^Host, Host_Crea
     host := new(Host);
     defer if errored do cfree(host);
 
-    memory.alloc_slice(^host.peers, peer_count);
-    defer if errored do memory.free_slice(^host.peers);
+    host.peers = make([] Peer, peer_count);
+    defer if errored do delete(^host.peers);
     host.connected_peers = 0;
 
     if socket, err := net.socket_create(.Inet, .Dgram); err != .None {
@@ -92,7 +92,7 @@ host_connect :: (host: ^Host, addr: ^net.Socket_Address, channel_count: u32) -> 
 
     if peer == null do return null;
 
-    memory.alloc_slice(^peer.channels, channel_count);
+    peer.channels = make([] Channel, channel_count);
     peer.host = host;
     peer.state = .Connecting;
     peer.addr = *addr;
@@ -118,8 +118,8 @@ host_connect :: (host: ^Host, addr: ^net.Socket_Address, channel_count: u32) -> 
 
 host_free :: (host: ^Host) {
     net.socket_close(^host.socket);
-    memory.free_slice(^host.peers);
-    cfree(host);
+    delete(^host.peers);
+    delete(host);
 }
 
 host_broadcast :: (host: ^Host, channel: Channel_ID, packet: ^Packet) {
@@ -421,7 +421,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     if peer == null do return null;
 
     channel_count := net.network_to_host(command.channel_count);
-    memory.alloc_slice(^peer.channels, channel_count);
+    peer.channels = make([] Channel, channel_count);
     for ^peer.channels do peer_setup_channel(peer, it);
 
     peer.state = .Acknowledging_Connection;
@@ -533,7 +533,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
         fragment = array.alloc_one(^channel.pending_fragments);
         fragment.fragment_id = fragment_id;
         fragment.fragments_remaining = net.network_to_host(command.fragment_count);
-        memory.alloc_slice(^fragment.data, net.network_to_host(command.total_length));
+        fragment.data = make([] u8, net.network_to_host(command.total_length));
     }
 
     memory.copy(fragment.data.data + net.network_to_host(command.fragment_offset), data.data, data_length);
