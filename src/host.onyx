@@ -320,6 +320,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     host.event.peer = peer;
     host.event.channel_id = 255; // Magic constant
     host.event.data = .[];
+    host.event.timestamp = host.current_time;
 
     host.produced_event = true;
 }
@@ -329,6 +330,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     host.event.peer = peer;
     host.event.channel_id = 255; // Magic constant
     host.event.data = .[];
+    host.event.timestamp = host.current_time;
 
     host.produced_event = true;
 }
@@ -338,6 +340,7 @@ host_get_events :: (host: ^Host, timeout: u32 = 0) -> Iterator(^Event) {
     host.event.peer = peer;
     host.event.channel_id = channel_id;
     host.event.data = data;
+    host.event.timestamp = host.current_time;
 
     host.produced_event = true;
 }
@@ -564,6 +567,7 @@ Event :: struct {
     type: Type;
     peer: ^Peer;
     channel_id: Channel_ID;
+    timestamp: u32;
     data: [] u8;
 }
 
